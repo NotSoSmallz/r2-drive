@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R2 File Share</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        /* Custom scrollbar for file list */
+        .file-list-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .file-list-container::-webkit-scrollbar-track {
+            background: #e0e0e0;
+            border-radius: 10px;
+        }
+        .file-list-container::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        .file-list-container::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">R2 File Share</h1>
+
+        <!-- File Upload Section -->
+        <div class="mb-8 p-6 bg-blue-50 rounded-lg border border-blue-200">
+            <h2 class="text-xl font-semibold text-blue-800 mb-4">Upload a File</h2>
+            <input type="file" id="fileInput" class="block w-full text-sm text-gray-700
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-500 file:text-white
+                hover:file:bg-blue-600 cursor-pointer mb-4">
+            <button id="uploadButton" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition duration-200 shadow-md">
+                Upload File
+            </button>
+            <div id="uploadStatus" class="mt-4 text-center text-sm text-gray-600"></div>
+            <div id="progressBarContainer" class="w-full bg-gray-200 rounded-full h-2.5 mt-4 hidden">
+                <div id="progressBar" class="bg-blue-500 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <!-- File List Section -->
+        <div class="p-6 bg-purple-50 rounded-lg border border-purple-200">
+            <h2 class="text-xl font-semibold text-purple-800 mb-4">Available Files</h2>
+            <button id="refreshButton" class="w-full bg-purple-600 text-white py-2 rounded-lg font-semibold hover:bg-purple-700 transition duration-200 shadow-md mb-4">
+                Refresh File List
+            </button>
+            <div id="fileList" class="file-list-container max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-2 bg-white">
+                <p class="text-gray-500 text-center py-4">No files loaded yet. Click 'Refresh File List'.</p>
+            </div>
+            <div id="listStatus" class="mt-4 text-center text-sm text-gray-600"></div>
+        </div>
+    </div>
+
+    <script>
+        // IMPORTANT: Replace these with your actual Cloudflare Worker endpoints
+        // These URLs should point to your deployed Cloudflare Worker that handles R2 operations.
+        const WORKER_BASE_URL = ‘https://flaredrive.adam-lapins.workers.dev'; // e.g., 'https://my-r2-worker.your-username.workers.dev'
+        const UPLOAD_ENDPOINT = `${WORKER_BASE_URL}/upload`;
+        const LIST_ENDPOINT = `${WORKER_BASE_URL}/list`;
+        const DOWNLOAD_ENDPOINT = `${WORKER_BASE_URL}/download`; // Worker should handle /download/:filename
+
+        // Get DOM elements
+        const fileInput = document.getElementById('fileInput');
+        const uploadButton = document.getElementById('uploadButton');
+        const uploadStatus = document.getElementById('uploadStatus');
+        const progressBarContainer = document.getElementById('progressBarContainer');
+        const progressBar = document.getElementById('progressBar');
+        const refreshButton = document.getElementById('refreshButton');
+        const fileListDiv = document.getElementById('fileList');
+        const listStatus = document.getElementById('listStatus');
+
+        /**
+         * Displays a temporary message in the status div.
+         * @param {HTMLElement} statusDiv - The div element to display the message in.
+         * @param {string} message - The message to display.
+         * @param {string} type - 'success', 'error', or 'info' for styling.
+         */
+        function showStatusMessage(statusDiv, message, type = 'info') {
+            statusDiv.textContent = message;
+            statusDiv.className = `mt-4 text-center text-sm`;
+            if (type === 'success') {
+                statusDiv.classList.add('text-green-700');
+            } else if (type === 'error') {
+                statusDiv.classList.add('text-red-700');
+            } else {
+                statusDiv.classList.add('text-gray-600');
+            }
+            // Clear message after a few seconds
+            setTimeout(() => {
+                statusDiv.textContent = '';
+            }, 5000);
+        }
+
+        /**
+         * Handles file upload to the Cloudflare Worker.
+         */
+        uploadButton.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                showStatusMessage(uploadStatus, 'Please select a file to upload.', 'error');
+                return;
+            }
+
+            uploadStatus.textContent = 'Uploading...';
+            progressBarContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+
+            const formData = new FormData();
+            formData.append('file', file); // 'file' is the expected field name by the Worker
+
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', UPLOAD_ENDPOINT, true);
+
+                // Update progress bar
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        const percentComplete = (event.loaded / event.total) * 100;
+                        progressBar.style.width = `${percentComplete}%`;
+                        uploadStatus.textContent = `Uploading: ${percentComplete.toFixed(0)}%`;
+                    }
+                };
+
+                xhr.onload = () => {
+                    progressBarContainer.classList.add('hidden');
+                    if (xhr.status === 200) {
+                        showStatusMessage(uploadStatus, 'File uploaded successfully!', 'success');
+                        fileInput.value = ''; // Clear file input
+                        listFiles(); // Refresh file list after upload
+                    } else {
+                        const errorData = JSON.parse(xhr.responseText || '{}');
+                        showStatusMessage(uploadStatus, `Upload failed: ${errorData.message || 'Unknown error'}`, 'error');
+                    }
+                };
+
+                xhr.onerror = () => {
+                    progressBarContainer.classList.add('hidden');
+                    showStatusMessage(uploadStatus, 'Network error during upload. Please check your connection.', 'error');
+                };
+
+                xhr.send(formData);
+
+            } catch (error) {
+                progressBarContainer.classList.add('hidden');
+                console.error('Upload error:', error);
+                showStatusMessage(uploadStatus, `An unexpected error occurred: ${error.message}`, 'error');
+            }
+        });
+
+        /**
+         * Fetches and displays the list of files from the Cloudflare Worker.
+         */
+        async function listFiles() {
+            fileListDiv.innerHTML = '<p class="text-gray-500 text-center py-4">Loading files...</p>';
+            listStatus.textContent = '';
+
+            try {
+                const response = await fetch(LIST_ENDPOINT);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Failed to fetch files: ${errorData.message || response.statusText}`);
+                }
+                const files = await response.json(); // Assuming the Worker returns an array of filenames/objects
+
+                if (files.length === 0) {
+                    fileListDiv.innerHTML = '<p class="text-gray-500 text-center py-4">No files found.</p>';
+                } else {
+                    fileListDiv.innerHTML = ''; // Clear previous list
+                    const ul = document.createElement('ul');
+                    ul.className = 'divide-y divide-gray-200';
+
+                    files.forEach(file => {
+                        const li = document.createElement('li');
+                        li.className = 'flex items-center justify-between py-2 px-3 hover:bg-gray-50 rounded-md';
+
+                        const fileName = file.name || file; // Assume file object has 'name' or is just a string
+                        const fileSize = file.size ? ` (${(file.size / 1024).toFixed(2)} KB)` : '';
+
+                        const fileText = document.createElement('span');
+                        fileText.className = 'text-gray-800 font-medium truncate';
+                        fileText.textContent = `${fileName}${fileSize}`;
+                        li.appendChild(fileText);
+
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = `${DOWNLOAD_ENDPOINT}/${encodeURIComponent(fileName)}`;
+                        downloadLink.className = 'ml-4 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-semibold hover:bg-blue-600 transition duration-200 shadow-sm';
+                        downloadLink.textContent = 'Download';
+                        downloadLink.target = '_blank'; // Open in new tab
+                        li.appendChild(downloadLink);
+
+                        ul.appendChild(li);
+                    });
+                    fileListDiv.appendChild(ul);
+                    showStatusMessage(listStatus, `Successfully loaded ${files.length} files.`, 'success');
+                }
+            } catch (error) {
+                console.error('Error fetching file list:', error);
+                fileListDiv.innerHTML = '<p class="text-red-500 text-center py-4">Error loading files.</p>';
+                showStatusMessage(listStatus, `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Event listener for refresh button
+        refreshButton.addEventListener('click', listFiles);
+
+        // Initial load of files when the page loads
+        document.addEventListener('DOMContentLoaded', listFiles);
+    </script>
+</body>
+</html>
+
