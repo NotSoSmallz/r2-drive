@@ -67,7 +67,7 @@
     <script>
         // IMPORTANT: Replace these with your actual Cloudflare Worker endpoints
         // These URLs should point to your deployed Cloudflare Worker that handles R2 operations.
-        const WORKER_BASE_URL = ‘https://flaredrive.adam-lapins.workers.dev'; // e.g., 'https://my-r2-worker.your-username.workers.dev'
+        const WORKER_BASE_URL = "https://flaredrive.adam-lapins.workers.dev"; // e.g., 'https://my-r2-worker.your-username.workers.dev'
         const UPLOAD_ENDPOINT = `${WORKER_BASE_URL}/upload`;
         const LIST_ENDPOINT = `${WORKER_BASE_URL}/list`;
         const DOWNLOAD_ENDPOINT = `${WORKER_BASE_URL}/download`; // Worker should handle /download/:filename
